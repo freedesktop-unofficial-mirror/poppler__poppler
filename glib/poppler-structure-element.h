@@ -82,6 +82,16 @@ typedef enum {
   POPPLER_STRUCTURE_ELEMENT_FORM,
 } PopplerStructureElementKind;
 
+/**
+ * PopplerStructureReference:
+ */
+typedef enum {
+  POPPLER_STRUCTURE_REFERENCE_UNKNOWN,
+  POPPLER_STRUCTURE_REFERENCE_ANNOT,
+  POPPLER_STRUCTURE_REFERENCE_LINK,
+} PopplerStructureReference;
+
+
 typedef struct _PopplerTextSpan PopplerTextSpan;
 struct _PopplerTextSpan {
   gchar *text;
@@ -118,6 +128,10 @@ GList                       *poppler_structure_element_get_text_spans           
                                                                                    gboolean                  recursive);
 const gchar                 *poppler_structure_element_get_alt_text               (PopplerStructureElement  *poppler_structure_element);
 const gchar                 *poppler_structure_element_get_actual_text            (PopplerStructureElement  *poppler_structure_element);
+gboolean                     poppler_structure_element_is_reference               (PopplerStructureElement  *poppler_structure_element);
+PopplerStructureReference    poppler_structure_element_get_reference_type         (PopplerStructureElement  *poppler_structure_element);
+PopplerAction               *poppler_structure_element_get_reference_link_action  (PopplerStructureElement  *poppler_structure_element);
+PopplerLinkMapping          *poppler_structure_element_get_reference_link_mapping (PopplerStructureElement  *poppler_structure_element);
 PopplerFormField            *poppler_structure_element_get_form_field             (PopplerStructureElement  *poppler_structure_element);
 PopplerFormFieldMapping     *poppler_structure_element_get_form_field_mapping     (PopplerStructureElement  *poppler_structure_element);
 

@@ -858,6 +858,126 @@ poppler_text_span_is_link (PopplerTextSpan *poppler_text_span)
 }
 
 /**
+ * poppler_structure_element_is_reference:
+ * @poppler_structure_element: A #PopplerStructureElement
+ *
+ * Return value: Whether the element is a reference to another object.
+ */
+gboolean
+poppler_structure_element_is_reference (PopplerStructureElement *poppler_structure_element)
+{
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), FALSE);
+  g_assert (poppler_structure_element->elem);
+
+  return poppler_structure_element->elem->isObjectRef ();
+}
+
+/**
+ * poppler_structure_element_get_reference_type:
+ * @poppler_structure_element: A #PopplerStructureElement
+ *
+ * Return value: The type of object pointed to by the reference, a value of
+ *    #PopplerStructureReference.
+ */
+PopplerStructureReference
+poppler_structure_element_get_reference_type (PopplerStructureElement *poppler_structure_element)
+{
+  PopplerStructureReference reftype = POPPLER_STRUCTURE_REFERENCE_UNKNOWN;
+
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), reftype);
+  g_assert (poppler_structure_element->elem);
+
+  if (poppler_structure_element->elem->isObjectRef ())
+    {
+      Object obj;
+      const Ref ref = poppler_structure_element->elem->getObjectRef ();
+      XRef *xref = poppler_structure_element->document->doc->getXRef ();
+
+      if (xref->fetch(ref.num, ref.gen, &obj)->isDict("Annot"))
+        {
+          reftype = POPPLER_STRUCTURE_REFERENCE_ANNOT;
+          Object subtype;
+          if (obj.dictLookup("Subtype", &subtype)->isName("Link"))
+            reftype = POPPLER_STRUCTURE_REFERENCE_LINK;
+          subtype.free();
+        }
+
+      obj.free();
+    }
+
+  return reftype;
+}
+
+
+static AnnotLink *
+_poppler_structure_element_find_annot_link (PopplerStructureElement *poppler_structure_element)
+{
+  if (poppler_structure_element_get_reference_type (poppler_structure_element)
+      != POPPLER_STRUCTURE_REFERENCE_LINK)
+    return NULL;
+
+  gint num = poppler_structure_element_get_page (poppler_structure_element);
+  if (num < 0 || num >= poppler_document_get_n_pages (poppler_structure_element->document))
+    return NULL;
+
+  Page *page = poppler_structure_element->document->doc->getPage (num + 1);
+  Links links(page->getAnnots ());
+
+  for (gint i = 0; i < links.getNumLinks (); i++)
+    {
+      AnnotLink *link = links.getLink (i);
+      const StructElement *parent = poppler_structure_element->document->doc->getStructTreeRoot ()->findParentElement (link->getTreeKey());
+      if (parent == poppler_structure_element->elem)
+        return link;
+    }
+
+  return NULL;
+}
+
+/**
+ * poppler_structure_element_get_reference_link:
+ * @poppler_structure_element: A #PopplerStructureElement
+ *
+ * Return value: (transfer full): The #PopplerAction associated to the
+ *    link, or %NULL if the element is not a reference pointing to
+ *    a link.
+ */
+PopplerAction *
+poppler_structure_element_get_reference_link_action (PopplerStructureElement *poppler_structure_element)
+{
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
+  g_assert (poppler_structure_element->elem);
+
+  AnnotLink *link = _poppler_structure_element_find_annot_link (poppler_structure_element);
+  return link ? _poppler_action_new (poppler_structure_element->document, link->getAction (), NULL) : NULL;
+}
+
+/**
+ * poppler_structure_element_get_reference_link_mapping:
+ * @poppler_structure_element: a #PopplerStructureElement
+ *
+ * Return value: (transfer full): The #PopplerLinkMapping for the pointed
+ *    object, or %NULL if the element is not a reference pointing to
+ *    a link.
+ */
+PopplerLinkMapping *
+poppler_structure_element_get_reference_link_mapping (PopplerStructureElement *poppler_structure_element)
+{
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
+  g_assert (poppler_structure_element->elem);
+
+  AnnotLink *link = _poppler_structure_element_find_annot_link (poppler_structure_element);
+  if (link == NULL)
+    return NULL;
+
+  gint page_num = poppler_structure_element_get_page (poppler_structure_element);
+
+  return _poppler_link_mapping_new_from_annot_link (poppler_structure_element->document,
+                                                    page_num,
+                                                    link);
+}
+
+/**
  * poppler_structure_element_get_form_field:
  * @poppler_structure_element: A #PopplerStructureElement
  *
