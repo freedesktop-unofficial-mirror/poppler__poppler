@@ -338,6 +338,463 @@ _poppler_structelement_type_to_poppler_structure_element_kind (StructElement::Ty
     }
 }
 
+static GBool
+_rgb_array_to_doubles(Array *array, double rgb[3])
+{
+  double r, g, b;
+  Object obj;
+
+  if (array->getLength() != 3)
+    return FALSE;
+
+  if (!array->getNF(0, &obj)->isReal()) goto not_a_real;
+  r = obj.getReal();
+  obj.free();
+
+  if (!array->getNF(1, &obj)->isReal()) goto not_a_real;
+  g = obj.getReal();
+  obj.free();
+
+  if (!array->getNF(2, &obj)->isReal()) goto not_a_real;
+  b = obj.getReal();
+  obj.free();
+
+  rgb[0] = r;
+  rgb[1] = g;
+  rgb[2] = b;
+
+  return TRUE;
+
+not_a_real:
+  obj.free();
+  return FALSE;
+}
+
+
+static GVariant*
+_g_variant_new_from_rgb_array (Array *array)
+{
+  double v[3];
+
+  g_return_val_if_fail (array->getLength () == 3, NULL);
+
+  if (!_rgb_array_to_doubles (array, v))
+    return NULL;
+
+  return g_variant_new ("(ddd)", v[0], v[1], v[2]);
+}
+
+
+static GVariant*
+_g_variant_new_from_rgb_array_or_x4 (Array *array)
+{
+  double v[12];
+
+  if (array->getLength() == 3)
+    {
+      if (!_rgb_array_to_doubles (array, v))
+        return NULL;
+
+      v[ 9] = v[6] = v[3] = v[0];
+      v[10] = v[7] = v[4] = v[1];
+      v[11] = v[8] = v[5] = v[2];
+    }
+  else if (array->getLength () == 4)
+    {
+      for (int i = 0; i < 4; i++)
+        {
+          Object item;
+          if (!array->get(i, &item)->isArray())
+            return NULL;
+          if (!_rgb_array_to_doubles (item.getArray(), &v[i * 3]))
+            return NULL;
+        }
+    }
+  else
+    return NULL;
+
+  return g_variant_new ("((ddd)(ddd)(ddd)(ddd))",
+                        v[ 0], v[ 1], v[ 2],
+                        v[ 3], v[ 4], v[ 5],
+                        v[ 6], v[ 7], v[ 8],
+                        v[ 9], v[10], v[11]);
+}
+
+
+template <typename EnumType>
+struct EnumNameValue {
+  const gchar *name;
+  EnumType     value;
+
+  static const EnumNameValue<EnumType> values[];
+  static const EnumType null = static_cast<EnumType> (-1);
+};
+
+template<>
+const EnumNameValue<PopplerStructurePlacement> EnumNameValue<PopplerStructurePlacement>::values[] =
+{
+  { "Block",  POPPLER_STRUCTURE_PLACEMENT_BLOCK  },
+  { "Inline", POPPLER_STRUCTURE_PLACEMENT_INLINE },
+  { "Before", POPPLER_STRUCTURE_PLACEMENT_BEFORE },
+  { "Start",  POPPLER_STRUCTURE_PLACEMENT_START  },
+  { "End",    POPPLER_STRUCTURE_PLACEMENT_END    },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureWritingMode> EnumNameValue<PopplerStructureWritingMode>::values[] =
+{
+  { "LrTb", POPPLER_STRUCTURE_WRITING_MODE_LR_TB },
+  { "RlTb", POPPLER_STRUCTURE_WRITING_MODE_RL_TB },
+  { "TbRl", POPPLER_STRUCTURE_WRITING_MODE_TB_RL },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureBorderStyle> EnumNameValue<PopplerStructureBorderStyle>::values[] =
+{
+  { "None",   POPPLER_STRUCTURE_BORDER_STYLE_NONE   },
+  { "Hidden", POPPLER_STRUCTURE_BORDER_STYLE_HIDDEN },
+  { "Dotted", POPPLER_STRUCTURE_BORDER_STYLE_DOTTED },
+  { "Dashed", POPPLER_STRUCTURE_BORDER_STYLE_DASHED },
+  { "Solid",  POPPLER_STRUCTURE_BORDER_STYLE_SOLID  },
+  { "Double", POPPLER_STRUCTURE_BORDER_STYLE_DOUBLE },
+  { "Groove", POPPLER_STRUCTURE_BORDER_STYLE_GROOVE },
+  { "Inset",  POPPLER_STRUCTURE_BORDER_STYLE_INSET  },
+  { "Outset", POPPLER_STRUCTURE_BORDER_STYLE_OUTSET },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureTextAlign> EnumNameValue<PopplerStructureTextAlign>::values[] =
+{
+  { "Start",   POPPLER_STRUCTURE_TEXT_ALIGN_START   },
+  { "Center",  POPPLER_STRUCTURE_TEXT_ALIGN_CENTER  },
+  { "End",     POPPLER_STRUCTURE_TEXT_ALIGN_END     },
+  { "Justify", POPPLER_STRUCTURE_TEXT_ALIGN_JUSTIFY },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureBlockAlign> EnumNameValue<PopplerStructureBlockAlign>::values[] =
+{
+  { "Before",  POPPLER_STRUCTURE_BLOCK_ALIGN_BEFORE  },
+  { "Middle",  POPPLER_STRUCTURE_BLOCK_ALIGN_MIDDLE  },
+  { "After",   POPPLER_STRUCTURE_BLOCK_ALIGN_AFTER   },
+  { "Justify", POPPLER_STRUCTURE_BLOCK_ALIGN_JUSTIFY },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureInlineAlign> EnumNameValue<PopplerStructureInlineAlign>::values[] =
+{
+  { "Start",  POPPLER_STRUCTURE_INLINE_ALIGN_START  },
+  { "Center", POPPLER_STRUCTURE_INLINE_ALIGN_CENTER },
+  { "End",    POPPLER_STRUCTURE_INLINE_ALIGN_END    },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureTextDecoration> EnumNameValue<PopplerStructureTextDecoration>::values[] =
+{
+  { "None",        POPPLER_STRUCTURE_TEXT_DECORATION_NONE        },
+  { "Underline",   POPPLER_STRUCTURE_TEXT_DECORATION_UNDERLINE   },
+  { "Overline",    POPPLER_STRUCTURE_TEXT_DECORATION_OVERLINE    },
+  { "LineThrough", POPPLER_STRUCTURE_TEXT_DECORATION_LINETHROUGH },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureRubyAlign> EnumNameValue<PopplerStructureRubyAlign>::values[] =
+{
+  { "Start",      POPPLER_STRUCTURE_RUBY_ALIGN_START      },
+  { "Center",     POPPLER_STRUCTURE_RUBY_ALIGN_CENTER     },
+  { "End",        POPPLER_STRUCTURE_RUBY_ALIGN_END        },
+  { "Justify",    POPPLER_STRUCTURE_RUBY_ALIGN_JUSTIFY    },
+  { "Distribute", POPPLER_STRUCTURE_RUBY_ALIGN_DISTRIBUTE },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureRubyPosition> EnumNameValue<PopplerStructureRubyPosition>::values[] =
+{
+  { "Before",  POPPLER_STRUCTURE_RUBY_POSITION_BEFORE  },
+  { "After",   POPPLER_STRUCTURE_RUBY_POSITION_AFTER   },
+  { "Warichu", POPPLER_STRUCTURE_RUBY_POSITION_WARICHU },
+  { "Inline",  POPPLER_STRUCTURE_RUBY_POSITION_INLINE  },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureGlyphOrientation> EnumNameValue<PopplerStructureGlyphOrientation>::values[] =
+{
+  { "Auto", POPPLER_STRUCTURE_GLYPH_ORIENTATION_AUTO },
+  { "90",   POPPLER_STRUCTURE_GLYPH_ORIENTATION_90   },
+  { "180",  POPPLER_STRUCTURE_GLYPH_ORIENTATION_180  },
+  { "270",  POPPLER_STRUCTURE_GLYPH_ORIENTATION_270  },
+  { "360",  POPPLER_STRUCTURE_GLYPH_ORIENTATION_0    },
+  { "-90",  POPPLER_STRUCTURE_GLYPH_ORIENTATION_270  },
+  { "-180", POPPLER_STRUCTURE_GLYPH_ORIENTATION_180  },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureListNumbering> EnumNameValue<PopplerStructureListNumbering>::values[] =
+{
+  { "None",       POPPLER_STRUCTURE_LIST_NUMBERING_NONE        },
+  { "Disc",       POPPLER_STRUCTURE_LIST_NUMBERING_DISC        },
+  { "Circle",     POPPLER_STRUCTURE_LIST_NUMBERING_CIRCLE      },
+  { "Square",     POPPLER_STRUCTURE_LIST_NUMBERING_SQUARE      },
+  { "Decimal",    POPPLER_STRUCTURE_LIST_NUMBERING_DECIMAL     },
+  { "UpperRoman", POPPLER_STRUCTURE_LIST_NUMBERING_UPPER_ROMAN },
+  { "LowerRoman", POPPLER_STRUCTURE_LIST_NUMBERING_LOWER_ROMAN },
+  { "UpperAlpha", POPPLER_STRUCTURE_LIST_NUMBERING_UPPER_ALPHA },
+  { "LowerAlpha", POPPLER_STRUCTURE_LIST_NUMBERING_LOWER_ALPHA },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureRole> EnumNameValue<PopplerStructureRole>::values[] =
+{
+  { "rb", POPPLER_STRUCTURE_ROLE_RADIO_BUTTON },
+  { "cb", POPPLER_STRUCTURE_ROLE_CHECKBOX     },
+  { "pb", POPPLER_STRUCTURE_ROLE_PUSH_BUTTON  },
+  { "tv", POPPLER_STRUCTURE_ROLE_TEXT_VALUE   },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureChecked> EnumNameValue<PopplerStructureChecked>::values[] =
+{
+  { "on",      POPPLER_STRUCTURE_CHECKED_ON      },
+  { "off",     POPPLER_STRUCTURE_CHECKED_OFF     },
+  { "neutral", POPPLER_STRUCTURE_CHECKED_NEUTRAL },
+  { NULL }
+};
+
+template<>
+const EnumNameValue<PopplerStructureScope> EnumNameValue<PopplerStructureScope>::values[] =
+{
+  { "Row",    POPPLER_STRUCTURE_SCOPE_ROW    },
+  { "Column", POPPLER_STRUCTURE_SCOPE_COLUMN },
+  { "Both",   POPPLER_STRUCTURE_SCOPE_BOTH   },
+  { NULL }
+};
+
+template <typename EnumType>
+static EnumType
+name_to_enum (Object   *name_value,
+              EnumType  default_value = EnumType::null)
+{
+  if (!name_value)
+    return default_value;
+
+  for (const EnumNameValue<EnumType> *item = EnumNameValue<EnumType>::values ; item->name; item++)
+    if (name_value->isName (item->name))
+      return item->value;
+
+  return default_value;
+}
+
+
+template <typename EnumType>
+static GVariant*
+name_to_variant_enum (Object  *name_value,
+                      EnumType default_value = EnumNameValue<EnumType>::null)
+{
+  EnumType value = name_to_enum<EnumType> (name_value, default_value);
+  return value == EnumNameValue<EnumType>::null ? NULL : g_variant_new_uint32 (value);
+}
+
+
+static GVariant*
+string_to_variant (Object *object)
+{
+  if (object->isName ())
+    return g_variant_new_string (object->getName ());
+  if (object->isString ())
+    {
+      gchar *utf8_string = _poppler_goo_string_to_utf8 (object->getString ());
+      GVariant* result = g_variant_new_string (utf8_string);
+      g_free (utf8_string);
+      return result;
+    }
+  return NULL;
+}
+
+
+static GVariant*
+_g_variant_new_from_border_style (Object *object)
+{
+  PopplerStructureBorderStyle border_style[4];
+
+  if (object->isArray () && object->arrayGetLength () == 4)
+    {
+      Object item;
+      for (int i = 0; i < 4; i++)
+        border_style[i] = name_to_enum<PopplerStructureBorderStyle> (object->arrayGet (i, &item),
+                                                                     POPPLER_STRUCTURE_BORDER_STYLE_NONE);
+    }
+  else if (object->isName ())
+    {
+      border_style[0] = border_style[1] = border_style[2] = border_style[3] =
+        name_to_enum <PopplerStructureBorderStyle> (object, POPPLER_STRUCTURE_BORDER_STYLE_NONE);
+    }
+  else
+    return NULL;
+
+  return g_variant_new ("(uuuu)",
+                        border_style[0],
+                        border_style[1],
+                        border_style[2],
+                        border_style[3]);
+}
+
+
+static GVariant*
+_g_variant_new_from_number_or_x4 (Object *object)
+{
+  double v[4];
+
+  if (object->isArray () && object->arrayGetLength () == 4)
+    {
+      Object item;
+      for (int i = 0; i < 4; i++)
+        {
+          if (object->arrayGet (i, &item)->isReal ())
+            v[i] = item.getReal ();
+          else if (item.isInt ())
+            v[i] = (double) item.getInt ();
+          else
+            return NULL;
+        }
+    }
+  else if (object->isReal ())
+    v[0] = v[1] = v[2] = v[3] = object->getReal ();
+  else if (object->isInt ())
+    v[0] = v[1] = v[2] = v[3] = (double) object->getInt ();
+  else
+    return NULL;
+
+  return g_variant_new ("(dddd)", v[0], v[1], v[2], v[3]);
+}
+
+
+static inline GVariant*
+_g_variant_new_from_number_x4 (Object *object)
+{
+  return object->isArray () ? _g_variant_new_from_number_or_x4 (object) : NULL;
+}
+
+
+static GVariant*
+_g_variant_new_from_number (Object *object)
+{
+  if (object->isReal ())
+    return g_variant_new_double (object->getReal ());
+  if (object->isInt ())
+    return g_variant_new_double ((double) object->getInt ());
+  return NULL;
+}
+
+
+static GVariant*
+_g_variant_new_from_number_or_auto (Object *object)
+{
+  if (object->isName ("Auto"))
+    return g_variant_new ("md", NULL);
+  if (object->isReal ())
+    return g_variant_new ("md", object->getReal ());
+  if (object->isInt ())
+    return g_variant_new ("md", (double) object->getInt ());
+  return NULL;
+}
+
+
+static inline GVariant*
+_g_variant_new_from_number_or_auto_or_normal (Object *object)
+{
+  return object->isName ("Normal") ? g_variant_new ("md", NULL)
+                                   : _g_variant_new_from_number_or_auto (object);
+}
+
+
+static GVariant*
+_g_variant_new_number_array (Object *object)
+{
+  GVariantBuilder *builder = g_variant_builder_new (G_VARIANT_TYPE ("ad"));
+
+  if (object->isReal ())
+    g_variant_builder_add (builder, "d", object->getReal ());
+  else if (object->isInt ())
+    g_variant_builder_add (builder, "d", (double) object->getInt ());
+  else if (object->isArray ())
+    {
+      for (int i = 0; i < object->arrayGetLength (); i++)
+        {
+          Object item;
+          if (object->arrayGet (i, &item)->isReal ())
+            g_variant_builder_add (builder, "d", item.getReal ());
+          else if (item.isInt ())
+            g_variant_builder_add (builder, "d", (double) item.getInt ());
+        }
+    }
+
+  GVariant *value = g_variant_new ("ad", builder);
+  g_variant_builder_unref (builder);
+  return value;
+}
+
+
+static GVariant*
+_g_variant_new_string_array (Object *object)
+{
+  GVariantBuilder *builder = g_variant_builder_new (G_VARIANT_TYPE ("as"));
+
+  if (object->isName ())
+    g_variant_builder_add (builder, "s", object->getName ());
+  else if (object->isString ())
+    {
+      gchar *utf8_string = _poppler_goo_string_to_utf8 (object->getString ());
+      g_variant_builder_add (builder, "s", utf8_string);
+      g_free (utf8_string);
+    }
+  else if (object->isArray ())
+    {
+      for (int i = 0; i < object->arrayGetLength (); i++)
+        {
+          Object item;
+          if (object->arrayGet (i, &item)->isName ())
+            g_variant_builder_add (builder, "s", object->getName ());
+          else if (object->isString ())
+            {
+              gchar *utf8_string = _poppler_goo_string_to_utf8 (object->getString ());
+              g_variant_builder_add (builder, "s", utf8_string);
+              g_free (utf8_string);
+            }
+        }
+    }
+
+  GVariant *value = g_variant_new ("as", builder);
+  g_variant_builder_unref (builder);
+  return value;
+}
+
+
+static inline Object*
+attr_value_or_default (PopplerStructureElement *poppler_structure_element,
+                       Attribute::Type          attribute_type,
+                       gboolean                 inherit)
+{
+  Object *value = Attribute::getDefaultValue (attribute_type);
+  const Attribute *attr;
+
+  if ((attr = poppler_structure_element->elem->findAttribute (attribute_type, inherit)))
+    value = attr->getValue ();
+
+  return value;
+}
+
 
 static void _poppler_text_span_free (gpointer data)
 {
@@ -855,6 +1312,320 @@ gboolean
 poppler_text_span_is_link (PopplerTextSpan *poppler_text_span)
 {
   return (poppler_text_span->flags & POPPLER_TEXT_SPAN_LINK);
+}
+
+/**
+ * poppler_structure_element_get_attribute:
+ * @poppler_structure_element: A #PopplerStructureElement.
+ * @attribute: A #PopperStructureAttribute value.
+ * @value (out): A #GValue in which to return the value of the attribute.
+ * @inherit: Whether to look up for inheritable attribute values in the
+ *    ancestors of the element, if the attribute is not defined in the
+ *    element.
+ *
+ * <table>
+ *   <title>Types returned for each attribute</title>
+ *   <thead>
+ *     <tr>
+ *       <th>Attributes</th>
+ *       <th>Returned type</th>
+ *     </tr>
+ *   </thead>
+ *   <tbody>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_PLACEMENT</code></td>
+ *       <td>A #PopplerStructurePlacement value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_WRITING_MODE</code></td>
+ *       <td>A #PopplerStructureWritingMode value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_TEXT_ALIGN</code></td>
+ *       <td>A #PopplerStructureTextAlign, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_BLOCK_ALIGN</code></td>
+ *       <td>A #PopplerStructureBlockAlign, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_INLINE_ALIGN</code></td>
+ *       <td>A #PopplerStructureInlineAlign, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_TEXT_DECORATION</code></td>
+ *       <td>A #PopplerStructureTextDecoration value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_RUBY_ALIGN</code></td>
+ *       <td>A #PopplerStructureRubyAlign value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_RUBY_POSITION</code></td>
+ *       <td>A #PopplerStructureRubyPosition value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_GLYPH_ORIENTATION</code></td>
+ *       <td>A #PopplerStructureGlyphOrientation value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_LIST_NUMBERING</code></td>
+ *       <td>A #PopplerStructureListNumbering value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_ROLE</code></td>
+ *       <td>A #PopplerStructureRole value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_CHECKED</code></td>
+ *       <td>A #PopplerStructureChecked value, as a <code>guint32</code>.</td>
+ *     </tr><tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_SCOPE</code></td>
+ *       <td>A #PopplerStructureScope value, as a <code>guint32</code>.</td>
+ *     </tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_DESCRIPTION</code></td>
+ *       <td rowspan="2">A string, as a <code>const gchar*</code>.</td>
+ *     </tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_SUMMARY</code></td></tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_SPACE_BEFORE</code></td>
+ *       <td rowspan="10">Number, as a <code>double</code>.</td>
+ *     </tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_SPACE_AFTER</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_START_INDENT</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_END_INDENT</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_TEXT_INDENT</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_BASELINE_SHIFT</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_TEXT_DECORATION_THICKNESS</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_COUNT</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_ROW_SPAN</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_SPAN</code></td></tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_GAP</code></td>
+ *       <td rowspan="2">
+ *           An array of <code>double</code> numbers. The type of the
+ *           returned #GVariant is <code>ad</code>.
+ *       </td>
+ *     </tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_WIDTHS</code></td></tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_WIDTH</code></td>
+ *       <td rowspan="3">
+ *           A maybe-double number. That is, a #GVariant with type
+ *           <code>md</code>. If the number is undefined, the value
+ *           is meant to be calculated automatically.
+ *       </td>
+ *     </tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_HEIGHT</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_LINE_HEIGHT</code></td></tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_COLOR</code></td>
+ *       <td rowspan="3">
+ *           A 3-tuple of doubles, with values in the <code>[0, 1]</code> range,
+ *           in red-green-blue (RGB) order. The type of the returned #GVariant is
+ *           <code>(ddd)</code>.
+ *       </td>
+ *     </tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_BACKGROUND_COLOR</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_TEXT_DECORATION_COLOR</code></td></tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_BORDER_COLOR</code></td>
+ *       <td>A 4-tuple of 3-tuples. Each one of the tuples is a RGB color,
+ *           being each color component a double in the <code>[0, 1]</code>
+ *           range. The four returned colors are in top-right-bottom-left
+ *           order. The type of the returned #GVariant is
+ *           <code>((ddd)(ddd)(ddd)(ddd))</code>.
+ *       </td>
+ *     </tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_BORDER_STYLE</code></td>
+ *       <td rowspan="2">
+ *           A 4-tuple of #PopplerStructureBorderStyle values, each one as a
+ *           %guint32, in top-right-bottom-left order. The type of the
+ *           returned #GVariant is <code>(uuuu)</code>.
+ *       </td>
+ *     </tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_TABLE_BORDER_STYLE</code></td></tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_BORDER_THICKNESS</code></td>
+ *       <td rowspan="4">
+ *           A 4-tuple of #double numbers, in top-right-bottom-left order.
+ *           The type of the returned #GVariant is <code>(dddd)</code>.
+ *       </td>
+ *     </tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_TABLE_PADDING</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_PADDING</code></td></tr>
+ *     <tr><td><code>POPPLER_STRUCTURE_ATTRIBUTE_BBOX</code></td></tr>
+ *     <tr>
+ *       <td><code>POPPLER_STRUCTURE_ATTRIBUTE_HEADERS</code></td>
+ *       <td>An array of strings, each string being a <code>const gchar*</code>.
+ *           The type of the returned #GVariant is <code>as</code>.</td>
+ *     </tr>
+ *   </tbody>
+ * </table>
+ *
+ * Return value: (transfer full): A #GVariant, with value varying depending
+ *    on the attribute requested, as specified in the table. If the
+ *    attribute is not defined, <code>NULL</code> is returned.
+ */
+GVariant*
+poppler_structure_element_get_attribute (PopplerStructureElement  *poppler_structure_element,
+                                         PopplerStructureAttribute attribute,
+                                         gboolean                  inherit)
+{
+  Object *value = NULL;
+
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
+  g_return_val_if_fail (attribute != POPPLER_STRUCTURE_ATTRIBUTE_UNKNOWN, NULL);
+  g_return_val_if_fail (attribute != POPPLER_STRUCTURE_ATTRIBUTE_USER_PROPERTY, NULL);
+
+  switch (attribute)
+    {
+      case POPPLER_STRUCTURE_ATTRIBUTE_PLACEMENT:
+        return name_to_variant_enum<PopplerStructurePlacement> (attr_value_or_default (poppler_structure_element,
+                                                                                       Attribute::Placement, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_WRITING_MODE:
+        return name_to_variant_enum<PopplerStructureWritingMode> (attr_value_or_default (poppler_structure_element,
+                                                                                         Attribute::WritingMode, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_BACKGROUND_COLOR:
+        value = attr_value_or_default (poppler_structure_element, Attribute::BackgroundColor, inherit);
+        return (value && value->isArray ()) ? _g_variant_new_from_rgb_array (value->getArray ()) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_BORDER_COLOR:
+        value = attr_value_or_default (poppler_structure_element, Attribute::BorderColor, inherit);
+        return (value && value->isArray ()) ? _g_variant_new_from_rgb_array_or_x4 (value->getArray ()) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_BORDER_STYLE:
+        value = attr_value_or_default (poppler_structure_element, Attribute::BorderStyle, inherit);
+        return value ?_g_variant_new_from_border_style (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_BORDER_THICKNESS:
+        value = attr_value_or_default (poppler_structure_element, Attribute::BorderThickness, inherit);
+        return value ? _g_variant_new_from_number_or_x4 (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_COLOR:
+        value = attr_value_or_default (poppler_structure_element, Attribute::Color, inherit);
+        return (value && value->isArray ()) ? _g_variant_new_from_rgb_array (value->getArray ()) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_PADDING:
+        value = attr_value_or_default (poppler_structure_element, Attribute::Padding, inherit);
+        return value ? _g_variant_new_from_number_or_x4 (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_SPACE_BEFORE:
+        value = attr_value_or_default (poppler_structure_element, Attribute::SpaceBefore, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_SPACE_AFTER:
+        value = attr_value_or_default (poppler_structure_element, Attribute::SpaceAfter, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_START_INDENT:
+        value = attr_value_or_default (poppler_structure_element, Attribute::StartIndent, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_END_INDENT:
+        value = attr_value_or_default (poppler_structure_element, Attribute::EndIndent, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_TEXT_INDENT:
+        value = attr_value_or_default (poppler_structure_element, Attribute::TextIndent, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_TEXT_ALIGN:
+        return name_to_variant_enum<PopplerStructureTextAlign> (attr_value_or_default (poppler_structure_element,
+                                                                                       Attribute::TextAlign, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_BBOX:
+        value = attr_value_or_default (poppler_structure_element, Attribute::BBox, inherit);
+        return value ? _g_variant_new_from_number_x4 (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_WIDTH:
+        value = attr_value_or_default (poppler_structure_element, Attribute::Width, inherit);
+        return value ? _g_variant_new_from_number_or_auto (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_HEIGHT:
+        value = attr_value_or_default (poppler_structure_element, Attribute::Height, inherit);
+        return value ? _g_variant_new_from_number_or_auto (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_BLOCK_ALIGN:
+        return name_to_variant_enum<PopplerStructureBlockAlign> (attr_value_or_default (poppler_structure_element,
+                                                                                        Attribute::BlockAlign, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_INLINE_ALIGN:
+        return name_to_variant_enum<PopplerStructureInlineAlign> (attr_value_or_default (poppler_structure_element,
+                                                                                         Attribute::InlineAlign, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_TABLE_BORDER_STYLE:
+        value = attr_value_or_default (poppler_structure_element, Attribute::TBorderStyle, inherit);
+        return value ?_g_variant_new_from_border_style (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_TABLE_PADDING:
+        value = attr_value_or_default (poppler_structure_element, Attribute::TPadding, inherit);
+        return value ? _g_variant_new_from_number_or_x4 (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_BASELINE_SHIFT:
+        value = attr_value_or_default (poppler_structure_element, Attribute::BaselineShift, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_LINE_HEIGHT:
+        value = attr_value_or_default (poppler_structure_element, Attribute::LineHeight, inherit);
+        return value ? _g_variant_new_from_number_or_auto_or_normal (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_TEXT_DECORATION_COLOR:
+        value = attr_value_or_default (poppler_structure_element, Attribute::TextDecorationColor, inherit);
+        return (value && value->isArray ()) ? _g_variant_new_from_rgb_array (value->getArray ()) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_TEXT_DECORATION_THICKNESS:
+        value = attr_value_or_default (poppler_structure_element, Attribute::LineHeight, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_TEXT_DECORATION:
+        return name_to_variant_enum<PopplerStructureTextDecoration> (attr_value_or_default (poppler_structure_element,
+                                                                                            Attribute::TextDecorationType, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_RUBY_ALIGN:
+        return name_to_variant_enum<PopplerStructureRubyAlign> (attr_value_or_default (poppler_structure_element,
+                                                                                       Attribute::RubyAlign, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_RUBY_POSITION:
+        return name_to_variant_enum<PopplerStructureRubyPosition> (attr_value_or_default (poppler_structure_element,
+                                                                                          Attribute::RubyPosition, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_GLYPH_ORIENTATION:
+        return name_to_variant_enum<PopplerStructureGlyphOrientation> (attr_value_or_default (poppler_structure_element,
+                                                                                              Attribute::GlyphOrientationVertical, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_COUNT:
+        value = attr_value_or_default (poppler_structure_element, Attribute::ColumnCount, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_GAP:
+        value = attr_value_or_default (poppler_structure_element, Attribute::ColumnGap, inherit);
+        return value ? _g_variant_new_number_array (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_WIDTHS:
+        value = attr_value_or_default (poppler_structure_element, Attribute::ColumnGap, inherit);
+        return value ? _g_variant_new_number_array (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_LIST_NUMBERING:
+        return name_to_variant_enum<PopplerStructureListNumbering> (attr_value_or_default (poppler_structure_element,
+                                                                                           Attribute::ListNumbering, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_ROLE:
+        return name_to_variant_enum<PopplerStructureRole> (attr_value_or_default (poppler_structure_element,
+                                                                                  Attribute::Role, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_CHECKED:
+        return name_to_variant_enum<PopplerStructureChecked> (attr_value_or_default (poppler_structure_element,
+                                                                                     Attribute::checked, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_DESCRIPTION:
+        return string_to_variant (attr_value_or_default (poppler_structure_element,
+                                                         Attribute::Desc, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_ROW_SPAN:
+        value = attr_value_or_default (poppler_structure_element, Attribute::RowSpan, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_COLUMN_SPAN:
+        value = attr_value_or_default (poppler_structure_element, Attribute::ColSpan, inherit);
+        return value ? _g_variant_new_from_number (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_HEADERS:
+        value = attr_value_or_default (poppler_structure_element, Attribute::Headers, inherit);
+        return value ? _g_variant_new_string_array (value) : NULL;
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_SCOPE:
+        return name_to_variant_enum<PopplerStructureScope> (attr_value_or_default (poppler_structure_element,
+                                                                                   Attribute::Scope, inherit));
+      case POPPLER_STRUCTURE_ATTRIBUTE_SUMMARY:
+        return string_to_variant (attr_value_or_default (poppler_structure_element, Attribute::Summary, inherit));
+
+      case POPPLER_STRUCTURE_ATTRIBUTE_USER_PROPERTY:
+      case POPPLER_STRUCTURE_ATTRIBUTE_UNKNOWN:
+      default:
+        g_assert_not_reached ();
+        return NULL;
+    }
 }
 
 /**
