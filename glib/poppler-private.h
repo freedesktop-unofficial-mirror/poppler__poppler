@@ -139,6 +139,10 @@ PopplerAnnot      *_poppler_annot_file_attachment_new (Annot *annot);
 PopplerAnnot      *_poppler_annot_movie_new (Annot *annot);
 PopplerAnnot      *_poppler_annot_screen_new (Annot *annot);
 
+PopplerLinkMapping *_poppler_link_mapping_new_from_annot_link (PopplerDocument *document,
+							       gint             page_num,
+							       AnnotLink       *link);
+
 char *_poppler_goo_string_to_utf8(GooString *s);
 gboolean _poppler_convert_pdf_date_to_gtime (GooString *date,
 					     time_t    *gdate);
