@@ -82,6 +82,25 @@ typedef enum {
   POPPLER_STRUCTURE_ELEMENT_FORM,
 } PopplerStructureElementKind;
 
+typedef struct _PopplerTextSpan PopplerTextSpan;
+struct _PopplerTextSpan {
+  gchar *text;
+  gchar *font_name;
+  gchar *link_target;
+  guint  flags;
+  guint  color; /* 0x00RRGGBB */
+};
+
+enum {
+  POPPLER_TEXT_SPAN_FIXED_WIDTH = (1 << 0),
+  POPPLER_TEXT_SPAN_SERIF_FONT  = (1 << 1),
+  POPPLER_TEXT_SPAN_ITALIC      = (1 << 2),
+  POPPLER_TEXT_SPAN_BOLD        = (1 << 3),
+  POPPLER_TEXT_SPAN_LINK        = (1 << 4),
+  POPPLER_TEXT_SPAN_COLOR       = (1 << 5),
+  POPPLER_TEXT_SPAN_FONT        = (1 << 6),
+};
+
 
 GType                        poppler_structure_element_get_type                   (void) G_GNUC_CONST;
 PopplerStructureElementKind  poppler_structure_element_get_kind                   (PopplerStructureElement  *poppler_structure_element);
@@ -95,6 +114,8 @@ const gchar                 *poppler_structure_element_get_abbreviation         
 const gchar                 *poppler_structure_element_get_language               (PopplerStructureElement  *poppler_structure_element);
 const gchar                 *poppler_structure_element_get_text                   (PopplerStructureElement  *poppler_structure_element,
                                                                                    gboolean                  recursive);
+GList                       *poppler_structure_element_get_text_spans             (PopplerStructureElement  *poppler_structure_element,
+                                                                                   gboolean                  recursive);
 const gchar                 *poppler_structure_element_get_alt_text               (PopplerStructureElement  *poppler_structure_element);
 const gchar                 *poppler_structure_element_get_actual_text            (PopplerStructureElement  *poppler_structure_element);
 
@@ -106,6 +127,11 @@ PopplerStructureElementIter *poppler_structure_element_iter_copy                
 PopplerStructureElement     *poppler_structure_element_iter_get_element           (PopplerStructureElementIter *iter);
 gboolean                     poppler_structure_element_iter_next                  (PopplerStructureElementIter *iter);
 void                         poppler_structure_element_iter_free                  (PopplerStructureElementIter *iter);
+
+gboolean                     poppler_text_span_is_fixed_width                     (PopplerTextSpan *poppler_text_span);
+gboolean                     poppler_text_span_is_serif_font                      (PopplerTextSpan *poppler_text_span);
+gboolean                     poppler_text_span_is_bold                            (PopplerTextSpan *poppler_text_span);
+gboolean                     poppler_text_span_is_link                            (PopplerTextSpan *poppler_text_span);
 
 G_END_DECLS
 

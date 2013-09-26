@@ -339,6 +339,16 @@ _poppler_structelement_type_to_poppler_structure_element_kind (StructElement::Ty
 }
 
 
+static void _poppler_text_span_free (gpointer data)
+{
+  PopplerTextSpan *span = (PopplerTextSpan*) data;
+  g_free (span->text);
+  g_free (span->font_name);
+  g_free (span->link_target);
+  g_slice_free (PopplerTextSpan, data);
+}
+
+
 typedef struct _PopplerStructureElementClass PopplerStructureElementClass;
 struct _PopplerStructureElementClass
 {
@@ -382,6 +392,7 @@ poppler_structure_element_finalize (GObject *object)
   g_free (poppler_structure_element->title);
   g_free (poppler_structure_element->id);
   g_object_unref (poppler_structure_element->document);
+  g_list_free_full (poppler_structure_element->text_spans, _poppler_text_span_free);
 
   G_OBJECT_CLASS (poppler_structure_element_parent_class)->finalize (object);
 }
@@ -664,4 +675,184 @@ poppler_structure_element_get_text (PopplerStructureElement *poppler_structure_e
       delete s;
     }
   return poppler_structure_element->text;
+}
+
+
+class SpanBuilder {
+public:
+  SpanBuilder():
+    font(), text(), link(),
+    map(globalParams->getTextEncoding()),
+    glist(NULL),
+    flags(0),
+    color(0)
+  {}
+
+  ~SpanBuilder() {
+    map->decRefCnt();
+    g_list_free_full (glist, _poppler_text_span_free);
+  }
+
+  void process(const MCOpArray& ops) {
+    for (MCOpArray::const_iterator i = ops.begin(); i != ops.end(); ++i)
+      process(*i);
+  }
+
+  void process(const MCOp& op) {
+    if (op.type == MCOp::Unichar) {
+      int n = map->mapUnicode(op.unichar, buf, sizeof(buf));
+      text.append(buf, n);
+      return;
+    }
+
+    Guint oldFlags = flags;
+
+    if (op.type == MCOp::Flags) {
+      if (op.flags & MCOp::FlagFontBold)
+        flags |= POPPLER_TEXT_SPAN_BOLD;
+      else
+        flags &= ~POPPLER_TEXT_SPAN_BOLD;
+
+      if (op.flags & MCOp::FlagFontFixed)
+        flags |= POPPLER_TEXT_SPAN_FIXED_WIDTH;
+      else
+        flags &= ~POPPLER_TEXT_SPAN_FIXED_WIDTH;
+
+      if (op.flags & MCOp::FlagFontItalic)
+        flags |= POPPLER_TEXT_SPAN_ITALIC;
+      else
+        flags &= ~POPPLER_TEXT_SPAN_ITALIC;
+    }
+
+    if (op.type == MCOp::Color && (color = op.color.rgbPixel ())) {
+      flags |= POPPLER_TEXT_SPAN_COLOR;
+    } else {
+      flags &= ~POPPLER_TEXT_SPAN_COLOR;
+    }
+
+    if (op.type == MCOp::FontName) {
+      if (op.value) {
+        flags |= POPPLER_TEXT_SPAN_FONT;
+        font.append(op.value);
+      } else {
+        flags &= ~POPPLER_TEXT_SPAN_FONT;
+      }
+    }
+
+    if (flags != oldFlags)
+      newSpan();
+  }
+
+  void newSpan() {
+    // If there is no text, do not append a new PopplerTextSpan
+    // and keep the attributes/flags for the next span.
+    if (text.getLength ()) {
+      PopplerTextSpan *span = g_slice_new0 (PopplerTextSpan);
+      span->color = color;
+      span->flags = flags;
+      span->text = _poppler_goo_string_to_utf8 (&text);
+      text.clear();
+
+      if (font.getLength()) {
+        span->font_name = _poppler_goo_string_to_utf8 (&font);
+        font.clear();
+      }
+
+      if (link.getLength()) {
+        assert(flags & POPPLER_TEXT_SPAN_LINK);
+        span->link_target = _poppler_goo_string_to_utf8 (&link);
+      }
+
+      glist = g_list_append (glist, span);
+    }
+
+    // Link is always cleared
+    link.clear();
+  }
+
+  GList* end() {
+    GList *result = glist;
+    glist = NULL;
+    return result;
+  }
+
+private:
+  GooString font;
+  GooString text;
+  GooString link;
+  UnicodeMap *map;
+  GList *glist;
+  char buf[8];
+  Guint flags;
+  Guint color;
+};
+
+
+/**
+ * poppler_structure_element_get_text_spans:
+ * @poppler_structure_element: A #PopplerStructureElement
+ *
+ * Obtains the text enclosed by an element, as a #GList of #PopplerTextSpan
+ * structures. Each item in the list is a piece of text which share the same
+ * attributes, plus its attributes.
+ *
+ * Return value: (transfer none) (element-type PopplerTextSpan): A #GList
+ *    of #PopplerTextSpan structures.
+ */
+GList*
+poppler_structure_element_get_text_spans (PopplerStructureElement *poppler_structure_element)
+{
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
+  g_assert (poppler_structure_element->elem);
+
+  if (!poppler_structure_element->elem->isContent ())
+    return NULL;
+
+  if (!poppler_structure_element->text_spans)
+    {
+      SpanBuilder builder;
+      builder.process(poppler_structure_element->elem->getMCOps ());
+      poppler_structure_element->text_spans = builder.end();
+    }
+  return poppler_structure_element->text_spans;
+}
+
+/**
+ * poppler_text_span_is_fixed_width:
+ * @poppler_text_span: a #PopplerTextSpan
+ */
+gboolean
+poppler_text_span_is_fixed_width (PopplerTextSpan *poppler_text_span)
+{
+  return (poppler_text_span->flags & POPPLER_TEXT_SPAN_FIXED_WIDTH);
+}
+
+/**
+ * poppler_text_span_is_serif_font:
+ * @poppler_text_span: a #PopplerTextSpan
+ */
+gboolean
+poppler_text_span_is_serif_font (PopplerTextSpan *poppler_text_span)
+{
+  return (poppler_text_span->flags & POPPLER_TEXT_SPAN_SERIF_FONT);
+}
+
+/**
+ * poppler_text_span_is_bols:
+ * @poppler_text_span: a #PopplerTextSpan
+ */
+gboolean
+poppler_text_span_is_bold (PopplerTextSpan *poppler_text_span)
+{
+  return (poppler_text_span->flags & POPPLER_TEXT_SPAN_BOLD);
+}
+
+/**
+ * poppler_text_span_is_link:
+ * @poppler_text_span: a #PopplerTextSpan
+ */
+gboolean
+poppler_text_span_is_link (PopplerTextSpan *poppler_text_span)
+{
+  return (poppler_text_span->flags & POPPLER_TEXT_SPAN_LINK);
 }

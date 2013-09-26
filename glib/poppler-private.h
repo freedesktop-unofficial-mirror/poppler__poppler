@@ -111,6 +111,7 @@ struct _PopplerStructureElement
   gchar *alt_text;
   gchar *actual_text;
   gchar *language;
+  GList *text_spans;
 };
 
 GList         *_poppler_document_get_layers (PopplerDocument *document);
