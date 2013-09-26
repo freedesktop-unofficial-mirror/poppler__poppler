@@ -118,6 +118,8 @@ GList                       *poppler_structure_element_get_text_spans           
                                                                                    gboolean                  recursive);
 const gchar                 *poppler_structure_element_get_alt_text               (PopplerStructureElement  *poppler_structure_element);
 const gchar                 *poppler_structure_element_get_actual_text            (PopplerStructureElement  *poppler_structure_element);
+PopplerFormField            *poppler_structure_element_get_form_field             (PopplerStructureElement  *poppler_structure_element);
+PopplerFormFieldMapping     *poppler_structure_element_get_form_field_mapping     (PopplerStructureElement  *poppler_structure_element);
 
 #define POPPLER_TYPE_STRUCTURE_ELEMENT_ITER                                       (poppler_structure_element_iter_get_type ())
 GType                        poppler_structure_element_iter_get_type              (void) G_GNUC_CONST;

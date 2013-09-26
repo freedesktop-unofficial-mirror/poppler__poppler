@@ -856,3 +856,68 @@ poppler_text_span_is_link (PopplerTextSpan *poppler_text_span)
 {
   return (poppler_text_span->flags & POPPLER_TEXT_SPAN_LINK);
 }
+
+/**
+ * poppler_structure_element_get_form_field:
+ * @poppler_structure_element: A #PopplerStructureElement
+ *
+ * Return value: (transfer full): A #PopplerFormField, or %NULL if
+ *    the element is not a %POPPLER_STRUCTURE_ELEMENT_FORM.
+ */
+PopplerFormField *
+poppler_structure_element_get_form_field (PopplerStructureElement *poppler_structure_element)
+{
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
+  g_assert (poppler_structure_element->elem);
+
+  if (poppler_structure_element->elem->getType () != StructElement::Form)
+    return NULL;
+
+  // TODO Handle elements which have a Role attribute (used sometimes for
+  //      non-editable widgets, to describe their appearance). Editable
+  //      fields have only a single child, with the field identifier.
+  if (poppler_structure_element->elem->getNumElements () != 1)
+    return NULL;
+
+  gint field_id = -1;
+  const StructElement *child = poppler_structure_element->elem->getElement (0);
+  if (child->isContent ())
+    {
+      if (child->isObjectRef ())
+        {
+          // TODO Handle this case -- I have yet to see a PDF using this.
+        }
+      else
+        {
+          // Element contains the form field ID as the MCID attribute.
+          field_id = child->getMCID ();
+        }
+    }
+
+  if (field_id < 0)
+    return NULL;
+
+  return (field_id < 0) ? NULL : poppler_document_get_form_field (poppler_structure_element->document,
+                                                                  field_id);
+}
+
+/**
+ * poppler_structure_element_get_form_field_mapping:
+ * @poppler_structure_element: a #PopplerStructureElement
+ *
+ * Return value: (transfer full): A #PopplerFormFieldMapping, or %NULL if
+ *    the element is not a %POPPLER_STRUCTURE_ELEMENT_FORM
+ */
+PopplerFormFieldMapping *
+poppler_structure_element_get_form_field_mapping (PopplerStructureElement *poppler_structure_element)
+{
+  g_return_val_if_fail (POPPLER_IS_STRUCTURE_ELEMENT (poppler_structure_element), NULL);
+  g_assert (poppler_structure_element->elem);
+
+  PopplerFormField *field = poppler_structure_element_get_form_field (poppler_structure_element);
+  if (field == NULL)
+    return NULL;
+
+  gint page_num = poppler_structure_element_get_page (poppler_structure_element);
+  return _poppler_form_field_mapping_new_from_form_field (field, page_num);
+}
